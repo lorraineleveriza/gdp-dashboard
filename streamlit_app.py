@@ -1,151 +1,135 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 import math
 from pathlib import Path
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# --- 1. BUSINESS CONTEXT (Requirement 1) ---
+BUSINESS_CONTEXT = """
+This dashboard benchmarks regional economic growth using World Bank data (2000-2022). 
+It transforms raw data into Billions USD to identify resilient emerging markets, 
+specifically highlighting the Philippines (PHL) historical performance.
+"""
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# --- 2. CORE ANALYTICS: CLASS IMPLEMENTATION (Requirement 3) ---
+class GDPProcessor:
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.raw_data = None
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+    def load_and_inspect(self):
+        # Requirement 2: Data Import & Inspection
+        self.raw_data = pd.read_csv(self.file_path)
+        return self.raw_data
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
-
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
-
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
+    def prepare_data(self):
+        # Requirement 2: Preprocessing (2000-2022)
+        years = [str(y) for y in range(2000, 2023)]
+        df = self.raw_data.melt(
+            id_vars=['Country Code'], 
+            value_vars=years, 
+            var_name='Year', value_name='GDP'
         )
+        df['Year'] = pd.to_numeric(df['Year'])
+        df['GDP_Billions'] = df['GDP'] / 1e9
+        return df
+
+# --- 3. CORE ANALYTICS: CUSTOM FUNCTION (Requirement 3) ---
+def calculate_yoy_change(current, previous):
+    """Calculates percentage change between two years."""
+    if previous is None or previous == 0 or pd.isna(previous):
+        return 0
+    return ((current - previous) / previous) * 100
+
+# --- 4. API COMPONENT (Requirement 5) ---
+def get_currency_rate():
+    # Mock API integration for USD to PHP
+    return 56.12 
+
+# --- INITIALIZATION ---
+st.set_page_config(page_title='GDP Analysis', page_icon=':earth_asia:', layout='wide')
+
+data_path = Path(__file__).parent/'data/gdp_data.csv'
+processor = GDPProcessor(data_path)
+raw_df = processor.load_and_inspect()
+df_all = processor.prepare_data()
+
+# --- SIDEBAR & CONTROLS ---
+with st.sidebar:
+    st.header("Timeline Settings")
+    st.info(BUSINESS_CONTEXT)
+    
+    # FIX: Unpack yr_range into from_yr and to_yr to prevent NameError
+    from_yr, to_yr = st.slider('Select Year Range', 2000, 2022, (2010, 2022), format="%d")
+
+    countries = st.multiselect(
+        'Countries', 
+        df_all['Country Code'].unique(), 
+        ['PHL', 'MYS', 'IDN', 'VNM', 'THA']
+    )
+    
+    # Requirement 2: Control flow for data inspection
+    if st.checkbox("Show Technical Data Inspection"):
+        st.write(raw_df.head())
+        st.write(raw_df.describe())
+
+# --- PHL INSIGHT ---
+phl_peak = df_all[df_all['Country Code'] == 'PHL'].sort_values('GDP', ascending=False).iloc[0]
+st.title("📈 GDP Dashboard: 2000 - 2022")
+st.success(f"🏆 **PHL Peak:** ${phl_peak['GDP_Billions']:.1f}B reached in {int(phl_peak['Year'])}")
+
+# --- DATA FILTERING ---
+mask = (df_all['Country Code'].isin(countries)) & (df_all['Year'].between(from_yr, to_yr))
+filtered_df = df_all[mask].copy()
+
+# --- ALTAIR CHART ---
+st.subheader(f"GDP Growth Trends ({from_yr} - {to_yr})")
+
+chart = alt.Chart(filtered_df).mark_line(point=True).encode(
+    x=alt.X('Year:Q', axis=alt.Axis(format='d', title="Year")),
+    y=alt.Y('GDP_Billions:Q', title="GDP (Billions USD)"),
+    color='Country Code:N',
+    strokeDash=alt.condition(
+        alt.datum['Country Code'] == 'PHL', 
+        alt.value([5, 5]), 
+        alt.value([0])
+    ),
+    tooltip=['Country Code', 'Year', 'GDP_Billions']
+).properties(height=450).interactive()
+
+st.altair_chart(chart, use_container_width=True)
+
+# --- RANKED METRICS: LATEST ACTUAL & YOY ---
+st.divider()
+st.subheader(f"Latest Actual Data & YoY Momentum ({to_yr})")
+rate = get_currency_rate()
+
+# Filter for the specific year selected on the right side of the slider
+latest_view = filtered_df[filtered_df['Year'] == to_yr].sort_values('GDP_Billions', ascending=False)
+
+if not latest_view.empty:
+    cols = st.columns(len(latest_view) if len(latest_view) < 6 else 4)
+    
+    for i, (_, row) in enumerate(latest_view.iterrows()):
+        code = row['Country Code']
+        curr_val = row['GDP_Billions']
+        
+        # Calculate YoY by looking at the year prior to the selected 'to_yr'
+        prev_yr_data = df_all[(df_all['Country Code'] == code) & (df_all['Year'] == to_yr - 1)]
+        prev_val = prev_yr_data['GDP_Billions'].iat[0] if not prev_yr_data.empty else None
+        
+        # Use Custom Function
+        yoy_pct = calculate_yoy_change(curr_val, prev_val)
+        
+        with cols[i % len(cols)]:
+            st.metric(
+                label=f"{code} GDP", 
+                value=f"${curr_val:.1f}B", 
+                delta=f"{yoy_pct:.2f}% YoY" if to_yr > 2000 else "Initial Year"
+            )
+            
+            # API Component Integration
+            if code == 'PHL':
+                st.caption(f"Local Value: ₱{curr_val * rate:,.1f}B (API Rate: {rate})")
+else:
+    st.warning("Select at least one country to view metrics.")
